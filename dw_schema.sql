@@ -87,7 +87,7 @@ CREATE TABLE dw.dim_payment (
     payment_key     SMALLINT     GENERATED ALWAYS AS IDENTITY,
     payment_type_id SMALLINT,                   -- natural key, NULL for unknown
     payment_desc    VARCHAR(30)  NOT NULL,
-    payment_category VARCHAR(20) NOT NULL,      -- Card/Cash/Other/Unknown
+    payment_category VARCHAR(20) NOT NULL,      -- Card/Flex/Cash/Other/Unknown
     CONSTRAINT pk_dim_payment    PRIMARY KEY (payment_key),
     CONSTRAINT uq_dim_payment_id UNIQUE (payment_type_id)
 );
@@ -131,14 +131,15 @@ CREATE TABLE dw.fact_trip (
     tip_amount            NUMERIC(10,2) NOT NULL DEFAULT 0,
     tolls_amount          NUMERIC(10,2) NOT NULL DEFAULT 0,
     improvement_surcharge NUMERIC(10,2) NOT NULL DEFAULT 0,
-    congestion_surcharge  NUMERIC(10,2) NOT NULL DEFAULT 0,
-    airport_fee           NUMERIC(10,2) NOT NULL DEFAULT 0,
+    congestion_surcharge  NUMERIC(10,2),          -- NULL = not reported (distinct from 0)
+    airport_fee           NUMERIC(10,2),          -- NULL = not reported (distinct from 0)
     cbd_congestion_fee    NUMERIC(10,2) NOT NULL DEFAULT 0	,
     total_amount          NUMERIC(10,2) NOT NULL DEFAULT 0,
 	
     -- Lightweight data-quality flags (set during ETL)
     is_refund             BOOLEAN NOT NULL DEFAULT FALSE,  -- total_amount < 0
     distance_valid        BOOLEAN NOT NULL DEFAULT TRUE,   -- 0 < distance <= 100 mi
+    duration_valid        BOOLEAN NOT NULL DEFAULT TRUE,   -- 0 < duration < 1440 min
 	
     -- Constraints
     CONSTRAINT pk_fact_trip          PRIMARY KEY (trip_key),
@@ -150,7 +151,8 @@ CREATE TABLE dw.fact_trip (
     CONSTRAINT fk_fact_ratecode      FOREIGN KEY (ratecode_key)         REFERENCES dw.dim_ratecode (ratecode_key),
     CONSTRAINT fk_fact_payment       FOREIGN KEY (payment_key)          REFERENCES dw.dim_payment (payment_key),
     CONSTRAINT fk_fact_flag          FOREIGN KEY (flag_key)             REFERENCES dw.dim_flag (flag_key),
-    CONSTRAINT ck_fact_passengers    CHECK (passenger_count IS NULL OR passenger_count BETWEEN 0 AND 9)
+    CONSTRAINT ck_fact_passengers    CHECK (passenger_count IS NULL OR passenger_count BETWEEN 0 AND 9),
+    CONSTRAINT ck_fact_duration      CHECK (trip_duration_min >= 0)
 );
 
 -- Secondary indexes on every foreign key (hash/merge/nested-loop join support).

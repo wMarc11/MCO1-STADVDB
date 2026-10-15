@@ -62,11 +62,12 @@ INSERT INTO {dest_table_name} (
     cbd_congestion_fee,
     total_amount,
     is_refund,
-    distance_valid
+    distance_valid,
+    duration_valid
 )
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-        %s, %s, %s, %s, %s);
+        %s, %s, %s, %s, %s, %s);
 """
 
 dest_cursor.execute(f"SELECT 1 FROM {dest_table_name} LIMIT 1;")
@@ -80,6 +81,8 @@ count = 0
 step = 5000
 while True:
     rows = src_cursor.fetchmany(step)
+    if not rows:
+        break
 
     new_rows = []
     for row in rows:
@@ -96,27 +99,31 @@ while True:
         pickup_ts = row["tpep_pickup_datetime"]
         dropoff_ts = row["tpep_dropoff_datetime"]
         passenger_count = row["passenger_count"]
-        trip_distance = get_decimal(row["trip_distance"])
+
+        # Keep the raw values so data-quality flags are computed on the
+        # source value, not on the get_decimal()-converted one.
+        raw_distance = row["trip_distance"]
+        raw_total = row["total_amount"]
+
+        trip_distance = get_decimal(raw_distance)
         minutes_elapsed = (dropoff_ts - pickup_ts).total_seconds() / 60
-        trip_duration_min = get_decimal(minutes_elapsed)
+        duration_valid = (0 < minutes_elapsed < 1440)
+        # Clamp invalid (negative / zero / absurd) durations to 0 so the
+        # CHECK (trip_duration_min >= 0) holds; duration_valid records the truth.
+        trip_duration_min = get_decimal(minutes_elapsed if minutes_elapsed > 0 else 0)
         fare_amount = get_decimal(row["fare_amount"])
         extra = get_decimal(row["extra"])
         mta_tax = get_decimal(row["mta_tax"])
         tip_amount = get_decimal(row["tip_amount"])
         tolls_amount = get_decimal(row["tolls_amount"])
         improvement_surcharge = get_decimal(row["improvement_surcharge"])
-        congestion_surcharge = get_decimal(row["congestion_surcharge"])
-        airport_fee = get_decimal(row["Airport_fee"])
+        congestion_surcharge = get_decimal_nullable(row["congestion_surcharge"])
+        airport_fee = get_decimal_nullable(row["airport_fee"])
         cbd_congestion_fee = get_decimal(row["cbd_congestion_fee"])
-        total_amount = get_decimal(row["total_amount"])
-        if total_amount is None:
-            is_refund = False
-        else:
-            is_refund = (total_amount < 0)
-        if trip_distance is None:
-            distance_valid = False
-        else:
-            distance_valid = (0 < trip_distance < 100)
+        total_amount = get_decimal(raw_total)
+
+        is_refund = raw_total is not None and raw_total < 0
+        distance_valid = raw_distance is not None and 0 < raw_distance <= 100
 
         new_rows.append((
             full_date,
@@ -143,16 +150,14 @@ while True:
             cbd_congestion_fee,
             total_amount,
             is_refund,
-            distance_valid
+            distance_valid,
+            duration_valid
         ))
 
     dest_cursor.executemany(insert_query, new_rows)
 
-    if not rows:
-        break
-
-    count += step
-    print(f"{count} rows outputted")
+    count += len(rows)
+    print(f"{count} rows read")
 
 dest_conn.commit() # needed without "with" statement
 

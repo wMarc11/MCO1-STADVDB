@@ -3,7 +3,7 @@ import psycopg
 def main():
     # format: payment_type_id, payment_desc, payment_category
     data = [
-        (0, "Flex Fare trip", "Card"),
+        (0, "Flex Fare trip", "Flex"),
         (1, "Credit card", "Card"),
         (2, "Cash", "Cash"),
         (3, "No charge", "Other"),
