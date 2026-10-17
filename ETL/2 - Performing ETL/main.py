@@ -1,5 +1,4 @@
 import psycopg
-from jinja2.lexer import describe_token_expr
 from psycopg.rows import dict_row
 
 from dim_keys import (
